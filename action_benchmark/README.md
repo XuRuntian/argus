@@ -1,5 +1,7 @@
 # Closed-Action Benchmark
 
+[中文实现说明：做了什么、如何接入、运行与评估](README.zh-CN.md)
+
 This opt-in workflow adds `constrained_subtasks` to Argus labels while preserving
 the normal annotation. It does not modify source data or the alignment repository.
 Preparation, dry runs, export and evaluation make no model calls.
@@ -10,9 +12,11 @@ Preparation, dry runs, export and evaluation make no model calls.
   are allowed. IDs are SHA-256 hashes of subject, skill and structured slots;
   free text and local numeric IDs do not define identity.
 - Completion rules come from the explicitly supplied `skill_spec_v1.yaml`.
-  Templates absent from that vocabulary are retained with `template_text_only`
-  provenance and listed in the audit. Their boundaries require human review;
-  they are not silently mapped to a different skill.
+  Missing rules for `hand_over`, `hold` and `return_to_initial_pose` use explicit
+  `benchmark_defaults_v1` conventions in `label/action_contract.py`. Existing
+  vocabulary rules take precedence. The resolved rules and their provenance
+  are embedded in the catalog and protected by its digest. Other missing rules
+  retain `template_text_only` provenance; no skill is silently remapped.
 - Input is **multi-view RGB only**. No Parquet columns, task descriptions,
   episode annotations or human boundaries enter model inputs. Preparation checks
   reference eligibility separately, without copying the answers into contexts.
@@ -43,7 +47,7 @@ source episodes. It validates each selected video's timestamps and frame count.
 `manifest.json` fixes the test selection, input modality, catalog and reference
 digest. A failed preparation has no completed manifest; use a fresh directory.
 
-Only after reviewing the dry run and authorizing a budget, replace `--dry-run`
+After authorizing a budget, replace `--dry-run`
 with `--max-spend 5` (USD). Configure provider credentials outside the repository.
 Use the existing harness's model, sampling, concurrency and retry controls.
 Do not supply example annotations or dataset-note overrides for this benchmark.
@@ -90,4 +94,20 @@ folder name in different scenarios receives a different dataset ID.
 
 Audit checks reference/template consistency and media existence; preparation
 additionally verifies actual video clocks. Neither proves that human labels are
-correct. Use human review for ambiguous boundaries and vocabulary-rule gaps.
+correct. No accuracy target, manual quality approval or pilot pass is required.
+
+## Shared Boundary Conventions
+
+| Default skill | Start | Exclusive end boundary |
+|---|---|---|
+| `hand_over` | Purposeful transfer motion begins | Receiver stably controls the object and giver has released it |
+| `hold` | Sustained stable holding begins after the previous action | Holding ends or another purposeful action begins |
+| `return_to_initial_pose` | Purposeful return motion begins | Initial pose is reached and returning stops |
+
+An interruption or recording end terminates an unfinished segment; it does not
+establish successful completion. Human reference boundaries remain unchanged.
+These defaults standardize Argus output, not the other repository automatically.
+Compare both systems using the same manifest/catalog and interval convention;
+if rerunning the other predictor, supply these same resolved boundary definitions.
+Existing job catalogs are immutable snapshots: prepare a fresh job to use updated
+rules, and do not mix predictions bearing different catalog digests.

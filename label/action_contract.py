@@ -8,6 +8,22 @@ import math
 from prepare.frame_rate import declared_fps
 
 VERSION = 'argus_actions_v1'
+DEFAULT_RULES_VERSION = 'benchmark_defaults_v1'
+DEFAULT_RULES = {
+    'hand_over': {
+        'start_rule': 'The first frame of purposeful motion to transfer the object between effectors.',
+        'completion_rule': 'The first frame where the receiving effector controls the object stably and '
+                           'the giving effector has released it.',
+    },
+    'hold': {
+        'start_rule': 'The first frame of sustained stable holding after the preceding action ends.',
+        'completion_rule': 'The first frame where sustained holding ends or another purposeful action begins.',
+    },
+    'return_to_initial_pose': {
+        'start_rule': 'The first frame of purposeful motion back toward the initial pose.',
+        'completion_rule': 'The first frame where the effector reaches the initial pose and stops returning.',
+    },
+}
 
 
 def digest(value):
@@ -42,6 +58,10 @@ def catalog(schema, vocabulary):
         action = canonical_action(rows[0])
         definition = vocabulary['skills'].get(action['skill'])
         definition = definition or {}
+        rule_source = 'vocabulary' if definition.get('completion_rule') else 'template_text_only'
+        if not definition.get('completion_rule') and action['skill'] in DEFAULT_RULES:
+            definition = {**definition, **DEFAULT_RULES[action['skill']]}
+            rule_source = DEFAULT_RULES_VERSION
         description = rows[0].get('text') or skill.get('text')
         if not isinstance(description, str) or not description.strip():
             raise ValueError('template requires a description')
@@ -49,8 +69,9 @@ def catalog(schema, vocabulary):
         actions[key] = {'action_id': key, 'primary_action': action,
                         'description': description,
                         'allowed_phases': definition.get('allowed_phases', []),
+                        **({'start_rule': definition['start_rule']} if definition.get('start_rule') else {}),
                         'completion_rule': definition.get('completion_rule'),
-                        'rule_source': 'vocabulary' if definition.get('completion_rule') else 'template_text_only'}
+                        'rule_source': rule_source}
     if not actions:
         raise ValueError('empty action catalog')
     result = {'version': VERSION, 'vocabulary_sha256': digest(vocabulary),
@@ -125,6 +146,10 @@ These are unordered possibilities, NOT an expected sequence. Infer order, repeti
 from the video. Do not assume every template occurs. One subtask is a complete action, not a subgoal
 or an individual phase: e.g. approach, align, grasp, secure and lift belong to one pick. Use the
 completion rules. Keep repeated actions separate even when they use the same template.
+Use explicit start_rule values when supplied. Completion events set the exclusive end_frame boundary.
+If the action is interrupted or the recording ends first, end at that observed boundary rather than
+inventing successful completion. benchmark_defaults_v1 rules are fixed benchmark conventions, not
+claims about the source annotations. Apply them consistently without a quality-acceptance threshold.
 When rule_source is template_text_only, use the template description and observable action cessation;
 no shared vocabulary completion rule exists for that action. Do not substitute another skill.
 Cover visible activity in temporal order without overlaps. Use action_id=null with a reason for

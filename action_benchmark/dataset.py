@@ -69,6 +69,8 @@ def audit(dataset, vocabulary):
     contract = definitions(dataset, vocabulary)
     schema = read(dataset / 'lite_annotations/annotation_schema_v1.json')
     result = {'dataset': str(dataset), 'catalog_sha256': contract['catalog_sha256'],
+              'skills_using_default_rules': sorted({r['primary_action']['skill'] for r in contract['actions']
+                                                   if r['rule_source'] == 'benchmark_defaults_v1'}),
               'skills_without_completion_rules': sorted({r['primary_action']['skill'] for r in contract['actions']
                                                         if r['rule_source'] == 'template_text_only'}),
               'templates': len(contract['actions']), 'episodes': [], 'errors': []}

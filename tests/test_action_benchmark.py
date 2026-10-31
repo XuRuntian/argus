@@ -23,6 +23,48 @@ def segment(contract, start=0, end=100):
     return {'start_frame': start, 'end_frame': end, 'action_id': contract['actions'][0]['action_id']}
 
 
+def test_dashscope_pilot_caps_dispatch_and_retains_timeout(tmp_path, monkeypatch):
+    from action_benchmark.dashscope_pilot import PilotClient
+    monkeypatch.setenv('DASHSCOPE_API_KEY', 'test-secret')
+    client = PilotClient(tmp_path / 'limited', max_calls=1, cap_cny=0.001)
+    with pytest.raises(ValueError, match='limit reached'):
+        client.send([{'role': 'user', 'content': 'hello'}])
+    assert not list(client.out.glob('call_*.json'))
+
+    class BrokenClient:
+        def __init__(self, **kwargs):
+            assert kwargs['follow_redirects'] is False
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def post(self, *args, **kwargs):
+            raise TimeoutError('unknown response')
+
+    monkeypatch.setattr('action_benchmark.dashscope_pilot.httpx.Client', BrokenClient)
+    client = PilotClient(tmp_path / 'timeout', max_calls=1, cap_cny=1)
+    with pytest.raises(TimeoutError):
+        client.send([{'role': 'user', 'content': 'hello'}])
+    receipt = (client.out / 'call_001.json').read_text()
+    assert 'outcome_unknown' in receipt and 'test-secret' not in receipt
+    with pytest.raises(ValueError, match='stopped after'):
+        client.send([{'role': 'user', 'content': 'hello'}])
+
+    class UnauthorizedClient(BrokenClient):
+        def post(self, *args, **kwargs):
+            from types import SimpleNamespace
+            return SimpleNamespace(status_code=401, text='invalid test-secret')
+
+    monkeypatch.setattr('action_benchmark.dashscope_pilot.httpx.Client', UnauthorizedClient)
+    client = PilotClient(tmp_path / 'unauthorized', max_calls=2, cap_cny=1)
+    with pytest.raises(ValueError, match='HTTP 401'):
+        client.send([{'role': 'user', 'content': 'hello'}])
+    with pytest.raises(ValueError, match='stopped after'):
+        client.send([{'role': 'user', 'content': 'hello'}])
+    assert client.calls == 1
+    assert 'test-secret' not in (client.out / 'call_001.json').read_text()
+
+
 def test_catalog_contains_definitions_not_answers(contract):
     text = prompt(contract)
     assert 'SECRET' not in text
@@ -32,6 +74,26 @@ def test_catalog_contains_definitions_not_answers(contract):
                                                            'slots': {'object': 'cup'}, 'text': 'ignored'})
     assert contract['actions'][0]['action_id'] != action_id({'subject': 'right_effector', 'skill': 'pick',
                                                            'slots': {'object': 'cup'}})
+
+
+@pytest.mark.parametrize('skill', ['hand_over', 'hold', 'return_to_initial_pose'])
+def test_missing_rules_use_versioned_defaults_without_overriding_vocabulary(skill):
+    schema = {'annotation_spec_version': 'skill_spec_v1', 'skills': [{'actions': [
+        {'subject': 'left_effector', 'skill': skill, 'slots': {}, 'text': skill}]}]}
+    vocabulary = {'version': 'skill_spec_v1', 'skills': {}}
+    original = copy.deepcopy(vocabulary)
+    defaults = catalog(schema, vocabulary)
+    row = defaults['actions'][0]
+    assert vocabulary == original
+    assert row['rule_source'] == 'benchmark_defaults_v1'
+    assert row['start_rule'] and row['completion_rule']
+    assert row['completion_rule'] in prompt({**defaults, 'frame_count': 100, 'fps': 10})
+    vocabulary['skills'][skill] = {'completion_rule': 'Authoritative source boundary'}
+    upstream = catalog(schema, vocabulary)
+    assert upstream['actions'][0]['rule_source'] == 'vocabulary'
+    assert upstream['actions'][0]['completion_rule'] == 'Authoritative source boundary'
+    assert upstream['actions'][0]['action_id'] == row['action_id']
+    assert upstream['catalog_sha256'] != defaults['catalog_sha256']
 
 
 @pytest.mark.parametrize('changes', [{'action_id': 'invented'}, {'start_frame': -1}, {'end_frame': 101},
@@ -107,6 +169,24 @@ def test_evaluation_counts_missing_episodes_and_rejects_wrong_provenance(tmp_pat
     predictions['dataset_id'] = 'another'
     with pytest.raises(ValueError, match='mismatch'):
         evaluate(tmp_path, predictions)
+
+
+def test_agent_replay_binds_exact_prompt_once(tmp_path):
+    from action_benchmark.agent_pilot import ReplyReplay
+
+    write_atomic(tmp_path / 'requests/call_001/messages.json', [
+        {'role': 'user', 'content': [{'type': 'text', 'text': 'original prompt'}]}])
+    write_atomic(tmp_path / 'replies/call_001.json', {'state': 'normal'})
+    client = ReplyReplay(tmp_path)
+    with pytest.raises(ValueError, match='unknown or repeated'):
+        client.annotate_segment({'prompt': 'modified prompt'})
+    assert client.annotate_segment({'prompt': 'original prompt'}) == {'state': 'normal'}
+    with pytest.raises(ValueError, match='unknown or repeated'):
+        client.annotate_segment({'prompt': 'original prompt'})
+    write_atomic(tmp_path / 'requests/call_002/messages.json', [
+        {'role': 'user', 'content': [{'type': 'text', 'text': 'original prompt'}]}])
+    with pytest.raises(ValueError, match='duplicate'):
+        ReplyReplay(tmp_path)
 
 
 def test_rgb_prepare_request_export_evaluate_without_network(tmp_path):
