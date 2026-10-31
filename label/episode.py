@@ -2930,6 +2930,10 @@ def build_prompt(ep: dict, pl: dict, *, cell_w: int, cell_h: int, example_dir=No
     fixed = prompts.fixed_instructions(r, has_instruction=bool(given), recorded=is_recorded(ep, pl, blocks),
                                       has_steps=has_steps(ctx))
     fixed += prompts.example_block(r, example_dir)
+    if ctx.get('action_contract'):
+        from label.action_contract import prompt, require_blind_context
+        require_blind_context(ctx, example_dir=example_dir)
+        fixed += prompt(ctx['action_contract'])
     if any(block.name == 'sensor_evidence' for block in blocks):
         fixed = (prompts.EVIDENCE_CONTRACT + '\nVISUAL ANNOTATION CONTRACT\n' + fixed
                  + '\nEND VISUAL ANNOTATION CONTRACT\n')

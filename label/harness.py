@@ -466,6 +466,7 @@ def label_episode(ep_dir: Path, out_path: Path, *, model: str, reasoning: str, a
                            derived_dir=Path(out_path).parent / ".derived" / "jaws")
     pl = req["plan"]
     fields = {
+        **({'action_contract': context['action_contract']} if context.get('action_contract') else {}),
         "input_identity": identity,
         "annotation_policy": resolved,
         **({"jaw_evidence": req["jaw_evidence"]} if req.get("jaw_evidence") else {}),
@@ -566,6 +567,8 @@ def input_identity(ep_dir: Path, *, model: str, reasoning: str, max_tokens: int,
     from label.evidence_access import source_proof, reader_projection_identity
     ep_dir = Path(ep_dir)
     ctx = json.loads((ep_dir / "context.json").read_text())
+    from label.action_contract import require_blind_context
+    require_blind_context(ctx, example_dir=example_dir, dataset_note=dataset_note)
     from prepare.state_contract import prepared_state_problem
     dims, has_action = None, False
     state_path = ep_dir / 'state.npz'
@@ -1242,6 +1245,13 @@ def read_reply(text: str, request: dict) -> tuple[dict, bool]:
     labels, with what it lacks under _incomplete, and is not a usable annotation (False). request is the record or
     the request fields it is built from."""
     labels, ok = parse_response(text)
+    if ok and request.get('action_contract'):
+        from label.action_contract import validate_segments
+        try:
+            validate_segments(labels.get('constrained_subtasks'), request['action_contract'])
+        except (ValueError, KeyError, TypeError) as error:
+            labels['_incomplete'] = [f'closed action contract: {error}']
+            return labels, False
     if ok and request.get('label_schema') == LABEL_SCHEMA:
         # a reply asked for a list of tasks: the recording's completion is the reply's own, against the instruction,
         # when the request gave one to a robot rig, and otherwise derived from the tasks

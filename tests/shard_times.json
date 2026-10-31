@@ -1,4 +1,5 @@
 {
+ "tests/test_action_benchmark.py": 1.0,
  "tests/test_abc_generic.py": 2.0,
  "tests/test_actor_disagreements.py": 2.0,
  "tests/test_actor_group_identity.py": 2.5,

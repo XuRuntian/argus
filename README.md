@@ -73,6 +73,10 @@ It is the only harness that combines native multi-format ingestion ([LeRobot's a
 
 ## Install and review
 
+For an opt-in, closed-action comparison against human subtask annotations, see
+[the action benchmark workflow](action_benchmark/README.md). It provides isolated
+RGB inputs, template-constrained subtask output, and shared frame/segment metrics.
+
 You need Python 3.11, [uv](https://docs.astral.sh/uv/), and [`ffmpeg`](https://ffmpeg.org/ffmpeg.html)/[`ffprobe`](https://ffmpeg.org/ffprobe.html) 5.1 or newer.
 
 ```console
@@ -284,6 +288,10 @@ Each command runs as `python -m <command>`; `--help` describes its options.
 
 | Command | Options |
 |---|---|
+| [`action_benchmark audit`](action_benchmark/__main__.py) | `--root`, `--vocabulary`, `--out` |
+| [`action_benchmark prepare`](action_benchmark/__main__.py) | `--dataset`, `--vocabulary`, `--episodes`, `--out` |
+| [`action_benchmark export`](action_benchmark/__main__.py) | `--job`, `--labels`, `--out` |
+| [`action_benchmark evaluate`](action_benchmark/__main__.py) | `--job`, `--predictions`, `--out` |
 | [`review`](review/__main__.py) | `--data`, `--rig`, `--out` and every option in [Settings](#settings) |
 | [`review seam`](label/seam.py) | `--label`, `--footage`, `--out`, `--dry-run`, `--cap`, `--model`, `--reasoning`, `--concurrency`, `--timeout`, `--apply` |
 | [`prepare abc130k prepare`](prepare/abc130k.py) | `--episodes`, `--out`, `--raw`, `--jobs`, `--force`, `--keep-mcap` |
