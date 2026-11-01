@@ -23,6 +23,26 @@ def segment(contract, start=0, end=100):
     return {'start_frame': start, 'end_frame': end, 'action_id': contract['actions'][0]['action_id']}
 
 
+def test_published_benchmark_preserves_unknown_reason(tmp_path, contract):
+    from label.pieces import _publish_reply
+
+    rows = [segment(contract, end=50),
+            {'start_frame': 50, 'end_frame': 100, 'action_id': None,
+             'reason': 'The supplied clip ends.'}]
+    validate_segments(rows, contract)
+    record = {'labels': {'constrained_subtasks': rows,
+                         'description': 'The supplied clip ends.'}}
+    source, target = tmp_path / 'raw.json', tmp_path / 'published.json'
+    write_atomic(source, record)
+    _publish_reply(source, target)
+
+    published = json.loads(target.read_text())
+    assert published['labels']['constrained_subtasks'] == rows
+    validate_segments(published['labels']['constrained_subtasks'], contract)
+    assert published['labels']['description'] is None
+    assert json.loads(source.read_text()) == record
+
+
 def test_dashscope_pilot_caps_dispatch_and_retains_timeout(tmp_path, monkeypatch):
     from action_benchmark.dashscope_pilot import PilotClient
     monkeypatch.setenv('DASHSCOPE_API_KEY', 'test-secret')
