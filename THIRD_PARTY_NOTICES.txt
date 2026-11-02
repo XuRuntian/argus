@@ -68,3 +68,9 @@ media/architecture.source.svg
 
     The recovery example uses Pantheon's UMI handoff recording at 3s and 5s. Image excerpts are cropped and scaled;
     source footage rights are unchanged.
+
+Bundled action vocabulary
+-------------------------
+action_benchmark/resources/skill_spec_v1.yaml originates from robo-subtask-alignment
+commit 6214b309c3712f172b02c3bb20a56b3ca31e96fc, under Apache-2.0.
+See action_benchmark/resources/README.md and LICENSE.upstream.

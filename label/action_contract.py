@@ -79,7 +79,43 @@ def catalog(schema, vocabulary):
     return {**result, 'catalog_sha256': digest(result)}
 
 
+GENERIC_VERSION = 'argus_generic_actions_v1'
+
+
+def generic_catalog(vocabulary, phases):
+    """Build a task-independent contract without reading a dataset schema."""
+    if not isinstance(vocabulary.get('skills'), dict) or not vocabulary['skills']:
+        raise ValueError('empty generic vocabulary')
+    body = {'version': GENERIC_VERSION, 'annotation_spec_version': vocabulary.get('version'),
+            'vocabulary_sha256': digest(vocabulary),
+            'skills': vocabulary['skills'], 'argument_definitions': vocabulary.get('argument_definitions', {}),
+            'phases': phases}
+    return {**body, 'catalog_sha256': digest(body)}
+
+
+def generic_action(action, contract):
+    action = canonical_action(action)
+    definition = contract['skills'].get(action['skill'])
+    if definition is None:
+        raise ValueError('skill outside generic vocabulary')
+    required = set(definition.get('required_arguments', [])) - {'subject'}
+    if set(action['slots']) != required:
+        raise ValueError('slots must match required_arguments exactly')
+    for key, value in action['slots'].items():
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError('slot values must be nonempty strings')
+        allowed = contract['argument_definitions'].get(key, {}).get('allowed_values')
+        if allowed and value not in allowed:
+            raise ValueError('slot value outside allowed_values')
+    return action
+
+
 def validate_contract(contract):
+    if contract.get('version') == GENERIC_VERSION:
+        body = {k: v for k, v in contract.items() if k not in ('catalog_sha256', 'frame_count', 'fps')}
+        if digest(body) != contract.get('catalog_sha256'):
+            raise ValueError('generic catalog digest mismatch')
+        return
     if contract.get('version') != VERSION:
         raise ValueError('unsupported action contract')
     body = {key: contract[key] for key in ('version', 'vocabulary_sha256', 'actions')}
@@ -99,7 +135,8 @@ def validate_segments(rows, contract):
         raise ValueError('frame_count must be a positive integer')
     if not isinstance(rows, list):
         raise ValueError('constrained_subtasks must be a list')
-    known = {row['action_id'] for row in contract['actions']}
+    generic = contract['version'] == GENERIC_VERSION
+    known = set(contract['skills']) if generic else {row['action_id'] for row in contract['actions']}
     last = 0
     for row in rows:
         if not isinstance(row, dict):
@@ -115,6 +152,10 @@ def validate_segments(rows, contract):
         if row.get('action_id') is None:
             if not isinstance(row.get('reason'), str) or not row['reason'].strip():
                 raise ValueError('unmatched subtask requires a reason')
+        elif generic:
+            action = generic_action(row.get('primary_action'), contract)
+            if row['action_id'] != action['skill']:
+                raise ValueError('action_id must equal the predicted skill')
         elif row['action_id'] not in known:
             raise ValueError('action_id outside the permitted catalog')
     return rows
@@ -136,6 +177,22 @@ def prompt(contract):
     rate = declared_fps(contract)
     if type(rate) not in (int, float) or not math.isfinite(rate) or rate <= 0:
         raise ValueError('fps must be positive and finite')
+    if contract['version'] == GENERIC_VERSION:
+        return """
+ADDITIONAL GENERIC ACTION OUTPUT
+Keep the normal annotation and return constrained_subtasks. Each segment contains
+start_frame, end_frame, action_id (the skill name), and primary_action:
+{"subject": "observed effector", "skill": "pick", "slots": {"argument": "observed value"}}.
+Use exactly the required_arguments for the chosen skill: subject is top-level,
+all others go in slots. Infer subject, objects and destinations from RGB only.
+The vocabulary is generic, not a list of expected actions. Do not assume its examples occur.
+Use consistent visible object names. Do not invent an identity or a hidden state.
+For activity that cannot be identified, use action_id=null and a nonempty reason.
+Intervals are integer half-open [start_frame,end_frame), frame k is k/fps seconds.
+Return ordered non-overlapping whole actions, keeping repetitions separate.
+Phases explain action boundaries; do not output each phase as a whole action.
+Follow completion rules; interrupted actions end at the observed interruption.
+""" + json.dumps(contract, ensure_ascii=True, allow_nan=False)
     return '''
 ADDITIONAL CLOSED-ACTION BENCHMARK OUTPUT
 Keep the normal annotation. Also return "constrained_subtasks", an array of objects:

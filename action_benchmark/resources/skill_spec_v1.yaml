@@ -1,0 +1,388 @@
+version: skill_spec_v1
+
+argument_definitions:
+  subject:
+    description: Robot body, base, arm, hand, gripper, or tool performing the skill.
+  manipulated_object:
+    description: Object directly controlled by the robot.
+  source_anchor:
+    description: Starting region, support, or spatial anchor.
+  destination_anchor:
+    description: Intended destination region, support, opening, or spatial anchor.
+  grasp_anchor:
+    description: Part of the manipulated object where the grasp is applied.
+  grasp_method:
+    description: Grasp method used by the robot.
+  placement_relation:
+    description: Spatial relation established by placement.
+    allowed_values: ["on", "in", "into", "under", "beside", "near", "against", "hang_on", "back_to"]
+  press_anchor:
+    description: Pressable part receiving force.
+  interaction_target:
+    description: Whole object or fixture being interacted with.
+  position_anchor:
+    description: Spatial region where the interaction happens.
+  changed_object:
+    description: Object whose observable state changes.
+  state_change:
+    description: Observable state reached by the changed object.
+  push_anchor:
+    description: Part of the target where pushing force is applied.
+  pull_anchor:
+    description: Part of the target where pulling force is applied.
+  twist_anchor:
+    description: Part of the target where rotational force is applied.
+  rotation_direction:
+    description: Direction of the rotational motion.
+    allowed_values: [clockwise, counterclockwise]
+  substance:
+    description: Liquid, granular material, or powder being poured.
+  source_container:
+    description: Container from which the substance is poured.
+  destination_container:
+    description: Container receiving the substance.
+  fold_anchor:
+    description: Fold line or part of a deformable object being folded.
+  support_surface:
+    description: Surface that remains in contact with an object while it slides.
+  insert_anchor:
+    description: Opening, hole, slot, or interface through which insertion occurs.
+  strike_anchor:
+    description: Part of the target receiving the strike.
+  tool_or_effector:
+    description: Tool or robot end effector used for the interaction.
+
+skills:
+  transfer:
+    display_name: Move with Object / Transfer
+    aliases: [Move with Object, Transfer]
+    description_template: >-
+      {subject} transfer {manipulated_object} from {source_anchor} to
+      {destination_anchor}
+    required_arguments: [subject, manipulated_object, source_anchor, destination_anchor]
+    meaning: 物体已被夹爪稳定控制，并发生明显空间移动。
+    example: 右夹爪将杯子从桌面左侧移动到桌面右侧。
+    notes: 不包含抓起和释放；如果包含释放，应拆成 Transfer 和 Place。
+    completion_rule: 物体停止被转移的第一帧。
+    allowed_phases: [carry, position, navigate_motion]
+
+  pick:
+    display_name: Pick
+    aliases: [Grasp, Grab]
+    description_template: >-
+      {subject} pick up {manipulated_object} from {source_anchor}, grasp anchor
+      {grasp_anchor}, grasp method {grasp_method}
+    required_arguments: [subject, manipulated_object, source_anchor, grasp_anchor, grasp_method]
+    meaning: 接近并抓起物体。
+    example: 左夹爪从桌面右侧区域抓取书本，抓取部位为书本主体，抓取方式为夹取。
+    notes: manipulated_object 写完整物体；grasp_anchor 写抓取部位。
+    completion_rule: 夹取稳定并将要进入后续移动的第一帧。
+    allowed_phases: [approach, align, grasp, secure, lift]
+
+  place:
+    display_name: Place
+    aliases: [Put]
+    description_template: >-
+      {subject} place {manipulated_object} {placement_relation}
+      {destination_anchor} and release it
+    required_arguments: [subject, manipulated_object, placement_relation, destination_anchor]
+    meaning: 平稳放下物体并释放，不是抛掷。
+    example: 右夹爪将杯子放到桌面右侧区域并释放。
+    notes: placement_relation 使用固定枚举。
+    completion_rule: 夹爪与物体接触关系消失的第一帧。
+    allowed_phases: [position, lower, release, retreat]
+
+  press:
+    display_name: Press
+    aliases: []
+    description_template: >-
+      {subject} press {press_anchor} of {interaction_target} at {position_anchor},
+      causing {changed_object} to {state_change}
+    required_arguments: [subject, press_anchor, interaction_target, position_anchor, changed_object, state_change]
+    meaning: 按压按钮、开关或其他可按压部件。
+    example: 右夹爪在面板右侧按压按钮顶部，使按钮状态变为 pressed。
+    notes: press_anchor 是被按压部位；interaction_target 是整体对象。
+    completion_rule: 目标被稳定按下、将要释放，或状态变化生效的第一帧。
+    allowed_phases: [approach, align, press_motion, retreat]
+
+  push:
+    display_name: Push
+    aliases: []
+    description_template: >-
+      {subject} push {interaction_target} at {push_anchor} from {source_anchor}
+      to/toward {destination_anchor}, causing {changed_object} to {state_change}
+    required_arguments: [subject, interaction_target, push_anchor, source_anchor, destination_anchor, changed_object, state_change]
+    meaning: 推动物体、把手、门或抽屉等目标。
+    example: 右夹爪推动抽屉把手，使抽屉向内关闭。
+    notes: 不要求抓住目标；强调受力方向上的位移。
+    completion_rule: 施加推力结束的第一帧。
+    allowed_phases: [approach, align, push_motion, retreat]
+
+  pull:
+    display_name: Pull
+    aliases: []
+    description_template: >-
+      {subject} pull {interaction_target} at {pull_anchor} from {source_anchor}
+      to/toward {destination_anchor}, causing {changed_object} to {state_change}
+    required_arguments: [subject, interaction_target, pull_anchor, source_anchor, destination_anchor, changed_object, state_change]
+    meaning: 拉动物体、抽屉、门、拉链或窗帘。
+    example: 右夹爪拉动窗帘边缘，将窗帘从左侧拉到右侧。
+    notes: 可包含短暂抓住，但核心是拉动目标。
+    completion_rule: 拉力结束的第一帧。
+    allowed_phases: [approach, align, grasp, secure, pull_motion, retreat]
+
+  twist:
+    display_name: Twist
+    aliases: [Rotate]
+    description_template: >-
+      {subject} twist {interaction_target} at {twist_anchor} {rotation_direction},
+      causing {changed_object} to {state_change}
+    required_arguments: [subject, interaction_target, twist_anchor, rotation_direction, changed_object, state_change]
+    meaning: 旋转、拧动、转开关或拧盖子。
+    example: 右夹爪顺时针拧动瓶盖，使瓶盖松开。
+    notes: rotation_direction 使用固定枚举。
+    completion_rule: 目标旋转结束之后的第一帧。
+    allowed_phases: [approach, align, grasp, secure, rotate_motion, retreat]
+
+  pour:
+    display_name: Pour
+    aliases: []
+    description_template: >-
+      {subject} pour {substance} from {source_container} into
+      {destination_container} by manipulating {manipulated_object}, causing
+      {changed_object} to {state_change}
+    required_arguments: [subject, substance, source_container, destination_container, manipulated_object, changed_object, state_change]
+    meaning: 倾倒液体、颗粒或粉末。
+    example: 右夹爪握持水壶，将水从水壶倒入杯子。
+    notes: manipulated_object 是被机器人直接控制的容器。
+    completion_rule: 倾倒结束的第一帧。
+    allowed_phases: [position, tilt_motion, pour_motion, retreat]
+
+  fold:
+    display_name: Fold
+    aliases: []
+    description_template: >-
+      {subject} fold {manipulated_object} at {fold_anchor} toward
+      {destination_anchor}, causing {changed_object} to {state_change}
+    required_arguments: [subject, manipulated_object, fold_anchor, destination_anchor, changed_object, state_change]
+    meaning: 折叠布料、纸张或其他软物体。
+    example: 双手将毛巾沿中线向内折叠，使毛巾变为 folded。
+    notes: fold_anchor 是折线或折叠部位。
+    completion_rule: 折叠步骤完成的第一帧。
+    allowed_phases: [approach, align, grasp, secure, fold_motion, position, release, retreat]
+
+  slide:
+    display_name: Slide
+    aliases: [SLIde]
+    description_template: >-
+      {subject} slide {manipulated_object} on {support_surface} from
+      {source_anchor} to {destination_anchor}
+    required_arguments: [subject, manipulated_object, support_surface, source_anchor, destination_anchor]
+    meaning: 不拿起物体，使其沿支撑表面滑动。
+    example: 右夹爪将盘子沿桌面从左侧滑到右侧。
+    notes: 与 Transfer 的区别是物体始终接触支撑面。
+    completion_rule: 物体结束滑行动力供给的第一帧。
+    allowed_phases: [approach, align, slide_motion, retreat]
+
+  insert:
+    display_name: Insert
+    aliases: []
+    description_template: >-
+      {subject} insert {manipulated_object} into {destination_anchor} through
+      {insert_anchor}, causing {changed_object} to {state_change}
+    required_arguments: [subject, manipulated_object, destination_anchor, insert_anchor, changed_object, state_change]
+    meaning: 将物体插入孔、槽、接口或容器开口。
+    example: 右夹爪将积木插入盒子凹槽。
+    notes: insert_anchor 是入口；destination_anchor 是插入后的目标位置。
+    completion_rule: 机器人完成插入并稳定的第一帧。
+    allowed_phases: [position, align, insert_motion, release, retreat]
+
+  shake:
+    display_name: Shake
+    aliases: []
+    description_template: >-
+      {subject} shake {manipulated_object} at {position_anchor}, causing
+      {changed_object} to {state_change}
+    required_arguments: [subject, manipulated_object, position_anchor, changed_object, state_change]
+    meaning: 摇晃物体，使内部物质混合、散开或掉落。
+    example: 右夹爪摇晃瓶子，使瓶内液体混合。
+    notes: 通常要求物体已被稳定抓住；不包含 Pick。
+    completion_rule: 摇晃结束的第一帧。
+    allowed_phases: [secure, shake_motion]
+
+  strike:
+    display_name: Strike
+    aliases: [Stamp]
+    description_template: >-
+      {subject} strike {interaction_target} at {strike_anchor} with
+      {tool_or_effector}, causing {changed_object} to {state_change}
+    required_arguments: [subject, interaction_target, strike_anchor, tool_or_effector, changed_object, state_change]
+    meaning: 敲击、打击、盖章或拍打目标。
+    example: 右夹爪使用印章敲击白纸，使纸上出现印记。
+    notes: tool_or_effector 可以是工具，也可以是夹爪本身。
+    completion_rule: 有效撞击完成后，工具或末端将要离开的第一帧。
+    allowed_phases: [approach, align, strike_motion, retreat]
+
+  throw:
+    display_name: Throw
+    aliases: []
+    description_template: >-
+      {subject} throw {manipulated_object} toward {destination_anchor} and
+      release it during motion
+    required_arguments: [subject, manipulated_object, destination_anchor]
+    meaning: 在运动中释放、抛出或突然丢下物体。
+    example: 右夹爪将纸团扔进垃圾桶。
+    notes: 与 Place 的区别是释放时物体仍有明显运动速度。
+    completion_rule: 物体离开夹爪的第一帧。
+    allowed_phases: [carry, throw_motion, release]
+
+  navigate:
+    display_name: Move / Navigate
+    aliases: [Move, Navigate]
+    description_template: >-
+      {subject} move from {source_anchor} to {destination_anchor}
+    required_arguments: [subject, source_anchor, destination_anchor]
+    meaning: 机器人本体或底盘移动，不操作物体。
+    example: 机器人本体从桌子前方移动到窗帘前方。
+    notes: subject 通常是 robot_body 或 base。
+    completion_rule: 机器人停止施加移动力的第一帧。
+    allowed_phases: [navigate_motion]
+
+  scrub:
+    display_name: Wipe / Scrub
+    aliases: [Wipe, Scrub]
+    description_template: >-
+      {subject} scrub/wipe {interaction_target} with {tool_or_effector} at
+      {position_anchor}, causing {changed_object} to {state_change}
+    required_arguments: [subject, interaction_target, tool_or_effector, position_anchor, changed_object, state_change]
+    meaning: 使用工具或末端擦拭、刷洗目标。
+    example: 右夹爪使用马桶刷刷洗马桶内壁，使马桶内壁变干净。
+    notes: tool_or_effector 可以是刷子、抹布、海绵或夹爪末端。
+    completion_rule: 擦洗结束的第一帧。
+    allowed_phases: [approach, align, scrub_motion, retreat]
+
+  other_manipulate:
+    display_name: Other / Manipulate
+    aliases: [Other, Manipulate]
+    description_template: >-
+      {subject} manipulate {interaction_target} at {position_anchor}, causing
+      {changed_object} to {state_change}
+    required_arguments: [subject, interaction_target, position_anchor, changed_object, state_change]
+    meaning: 其他尚未被词表覆盖的操作。
+    example: 右夹爪调整未知物体位置。
+    notes: 只能作为兜底；高频动作应新增独立 Skill。
+    completion_rule: 人工指定的关键状态变化帧。
+    allowed_phases: [approach, align, grasp, secure, lift, carry, position, lower, release, press_motion, push_motion, pull_motion, rotate_motion, tilt_motion, pour_motion, fold_motion, slide_motion, insert_motion, shake_motion, strike_motion, throw_motion, scrub_motion, navigate_motion, retreat]
+
+  none:
+    display_name: None
+    aliases: [End, Idle]
+    description_template: ""
+    required_arguments: []
+    meaning: 无任务相关操作。
+    example: ""
+    notes: 用于任务结束或无任务相关操作的 subtask。
+    completion_rule: 无任务相关动作结束，或 episode 到达最终结束帧。
+    allowed_phases: [idle, retreat]
+
+phases:
+  approach:
+    meaning: 接近目标。
+    start_rule: 主体开始朝目标有效移动。
+    end_rule: 主体到达可操作距离。
+  align:
+    meaning: 对准目标。
+    start_rule: 主体开始调整姿态、位置或角度。
+    end_rule: 对准完成并准备执行核心动作。
+  grasp:
+    meaning: 执行抓取。
+    start_rule: 夹爪开始闭合或形成抓取动作。
+    end_rule: 抓取动作完成。
+  secure:
+    meaning: 稳定控制。
+    start_rule: 物体已被抓住，但仍存在晃动、滑动、二次夹紧或稳定等待。
+    end_rule: 物体稳定受控，可进入后续运动。
+  lift:
+    meaning: 抬起。
+    start_rule: 物体开始离开支撑面。
+    end_rule: 物体完成离面并稳定。
+  carry:
+    meaning: 搬运。
+    start_rule: 被控物体开始随主体发生明显空间移动。
+    end_rule: 被控物体到达目标区域。
+  position:
+    meaning: 精确定位。
+    start_rule: 到达目标区域后开始微调位置或姿态。
+    end_rule: 达到放置、插入、倾倒或操作姿态。
+  lower:
+    meaning: 下放。
+    start_rule: 被控物体开始向目标位置降低。
+    end_rule: 物体到达放置高度或目标位置。
+  release:
+    meaning: 释放。
+    start_rule: 夹爪开始松开。
+    end_rule: 物体脱离夹爪控制。
+  press_motion:
+    meaning: 按压。
+    start_rule: 主体开始向可按压部件施加按压运动。
+    end_rule: 按压状态生效、达到最大按压位，或按压动作结束。
+  push_motion:
+    meaning: 推动。
+    start_rule: 主体开始推动目标，使目标沿受力方向移动。
+    end_rule: 推动动作结束。
+  pull_motion:
+    meaning: 拉动。
+    start_rule: 主体开始拉动目标，使目标沿拉力方向移动。
+    end_rule: 拉动动作结束。
+  rotate_motion:
+    meaning: 旋转或拧动。
+    start_rule: 主体开始带动目标旋转。
+    end_rule: 旋转动作结束。
+  tilt_motion:
+    meaning: 倾斜。
+    start_rule: 被控容器开始倾斜。
+    end_rule: 容器达到倾倒姿态。
+  pour_motion:
+    meaning: 倾倒。
+    start_rule: 内容物开始明显流出，或容器进入稳定倾倒输出状态。
+    end_rule: 内容物流动结束。
+  fold_motion:
+    meaning: 折叠。
+    start_rule: 软物体或纸张开始形成折痕或折叠形变。
+    end_rule: 折叠形态完成。
+  slide_motion:
+    meaning: 表面滑动。
+    start_rule: 物体开始沿支撑面滑动且未被抬起。
+    end_rule: 滑动结束。
+  insert_motion:
+    meaning: 插入。
+    start_rule: 物体开始进入孔、槽、接口或容器开口。
+    end_rule: 插入到位并稳定。
+  shake_motion:
+    meaning: 摇晃。
+    start_rule: 被控物体开始往复摆动。
+    end_rule: 摇晃停止。
+  strike_motion:
+    meaning: 敲击、盖章或拍打。
+    start_rule: 主体或工具开始有效击打运动。
+    end_rule: 有效撞击完成。
+  throw_motion:
+    meaning: 抛掷加速。
+    start_rule: 被控物体开始被加速并形成抛掷运动。
+    end_rule: 夹爪开始释放前，或物体即将脱离控制。
+  scrub_motion:
+    meaning: 擦拭或刷洗。
+    start_rule: 工具或末端开始往复清洁运动。
+    end_rule: 本轮擦洗结束。
+  navigate_motion:
+    meaning: 本体移动。
+    start_rule: robot_body 或 base 开始移动。
+    end_rule: robot_body 或 base 停止移动。
+  retreat:
+    meaning: 离开目标。
+    start_rule: 主体开始远离目标区域。
+    end_rule: 主体离开到非操作距离。
+  idle:
+    meaning: 无任务动作。
+    start_rule: 无任务相关动作开始。
+    end_rule: 无任务相关动作结束。

@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from action_benchmark.__main__ import evaluate
-from action_benchmark.evaluate import matches, score_episode
+from action_benchmark.experiments.evaluation import evaluate
+from action_benchmark.experiments.metrics import matches, score_episode
 from label.action_contract import action_id, catalog, digest, prompt, validate_segments
 from label.atomic import write_atomic
 from label.harness import read_reply
@@ -209,7 +209,8 @@ def test_agent_replay_binds_exact_prompt_once(tmp_path):
         ReplyReplay(tmp_path)
 
 
-def test_rgb_prepare_request_export_evaluate_without_network(tmp_path):
+@pytest.mark.parametrize('mode', ['closed', 'generic'])
+def test_rgb_prepare_request_export_evaluate_without_network(tmp_path, mode):
     import av
     import numpy as np
     import yaml
@@ -240,7 +241,10 @@ def test_rgb_prepare_request_export_evaluate_without_network(tmp_path):
     vocab = tmp_path / 'vocab.yaml'
     vocab.write_text(yaml.safe_dump({'version': 'skill_spec_v1', 'skills': {'pick': {'completion_rule': 'lift'}}}))
     job = tmp_path / 'job'
-    manifest = prepare(data, vocab, job)
+    if mode == 'generic':
+        (data / 'lite_annotations/annotation_schema_v1.json').unlink()
+    manifest = prepare(data, vocab, job, mode=mode)
+    write_atomic(data / 'lite_annotations/annotation_schema_v1.json', schema)
     ep = job / 'episodes/episode_000000'
     receipt = job / 'labels/episode_000000.json'
     record = harness.label_episode(ep, receipt, model='openai/gpt-6-astra', reasoning='medium', api_key='dry-run',
@@ -252,12 +256,24 @@ def test_rgb_prepare_request_export_evaluate_without_network(tmp_path):
                               max_tokens=64000, timeout=6060, cell_w=448, dry_run=True, dataset_note='SECRET_ORDER')
     reply = {'task_summary': 'pick cup', 'timeline': [{'start_s': 0, 'end_s': 2, 'action': 'pick'}], 'tasks': [],
              'constrained_subtasks': [{'start_frame': 0, 'end_frame': 20,
-                                      'action_id': manifest['catalog']['actions'][0]['action_id']}]}
+                                      'action_id': manifest['catalog']['actions'][0]['action_id'] if mode == 'closed' else 'pick',
+                                      **({'primary_action': action} if mode == 'generic' else {})}]}
     record['labels'], record['parse_ok'] = harness.read_reply(json.dumps(reply), record)
     assert record['parse_ok'], record['labels']
     write_atomic(receipt, record)
     predictions = export(job, receipt.parent)
+    assert predictions['annotation_spec_version'] == 'skill_spec_v1'
+    assert predictions['interval_convention'] == '[start_frame, end_frame)'
+    assert predictions['episodes'][0]['subtasks'][0]['primary_action']['skill'] == 'pick'
+    with pytest.raises(ValueError, match='missing annotation'):
+        export(job, job / 'absent-labels')
     assert evaluate(job, predictions)['summary']['macro_segment_f1_0.5'] == 1
+    if mode == 'generic':
+        predictions['episodes'][0]['subtasks'][0]['primary_action']['subject'] = 'right_effector'
+        report = evaluate(job, predictions)
+        assert report['summary']['macro_segment_f1_0.5'] == 0
+        assert report['skill_only_summary']['macro_segment_f1_0.5'] == 1
+        assert manifest['reference_sha256'] is None
     del record['input_identity']
     write_atomic(receipt, record)
     with pytest.raises(ValueError, match='missing benchmark input proof'):
@@ -265,5 +281,40 @@ def test_rgb_prepare_request_export_evaluate_without_network(tmp_path):
     schema['episode_annotation'][0]['frame_count'] = 99
     write_atomic(data / 'lite_annotations/annotation_schema_v1.json', schema)
     with pytest.raises(ValueError, match='frame count mismatch'):
-        prepare(data, vocab, tmp_path / 'bad-job')
+        prepare(data, vocab, tmp_path / 'bad-job', mode='closed')
     assert not (tmp_path / 'bad-job').exists()
+
+
+def test_generic_vocabulary_is_independent_and_validates_slots():
+    import yaml
+    from action_benchmark.dataset import DEFAULT_VOCABULARY
+    from label.action_contract import generic_catalog
+    vocab = yaml.safe_load(DEFAULT_VOCABULARY.read_text())
+    contract = {**generic_catalog(vocab, vocab['phases']), 'frame_count': 30, 'fps': 10}
+    action = {'subject': 'left_effector', 'skill': 'pick',
+              'slots': {k: 'visible object' for k in vocab['skills']['pick']['required_arguments'] if k != 'subject'}}
+    row = {'start_frame': 0, 'end_frame': 30, 'action_id': 'pick', 'primary_action': action}
+    assert validate_segments([row], contract) == [row]
+    assert 'description_template' in prompt(contract)
+    bad = copy.deepcopy(row)
+    bad['primary_action']['slots']['invented'] = 'test'
+    with pytest.raises(ValueError, match='required_arguments'):
+        validate_segments([bad], contract)
+    bad = copy.deepcopy(row)
+    bad['action_id'] = 'place'
+    with pytest.raises(ValueError, match='predicted skill'):
+        validate_segments([bad], contract)
+    changed = copy.deepcopy(contract)
+    changed['skills']['pick']['completion_rule'] = 'changed'
+    with pytest.raises(ValueError, match='digest'):
+        validate_segments([], changed)
+
+
+def test_annotation_cli_has_no_comparison_commands(capsys):
+    from action_benchmark.__main__ import main
+    with pytest.raises(SystemExit) as result:
+        main(['--help'])
+    assert result.value.code == 0
+    help_text = capsys.readouterr().out
+    assert '{prepare,export}' in help_text
+    assert 'evaluate' not in help_text

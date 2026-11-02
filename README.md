@@ -73,11 +73,9 @@ It is the only harness that combines native multi-format ingestion ([LeRobot's a
 
 ## Install and review
 
-For an opt-in, closed-action comparison against human subtask annotations, see
-[the action benchmark workflow](action_benchmark/README.md). It provides isolated
-RGB inputs, template-constrained subtask output, and shared frame/segment metrics.
-See also the [中文实现说明](action_benchmark/README.zh-CN.md) for implementation details,
-data isolation, evaluation rules, commands, and verification status.
+For action output using a shared skill specification, see the
+[action annotation workflow](action_benchmark/README.md) / [中文说明](action_benchmark/README.zh-CN.md).
+Results can be compared with other systems externally.
 
 You need Python 3.11, [uv](https://docs.astral.sh/uv/), and [`ffmpeg`](https://ffmpeg.org/ffmpeg.html)/[`ffprobe`](https://ffmpeg.org/ffprobe.html) 5.1 or newer.
 

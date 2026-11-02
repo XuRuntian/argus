@@ -8,9 +8,12 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from label.action_contract import action_id, catalog, digest, validate_segments
+from label.action_contract import action_id, catalog, digest, validate_segments, generic_catalog, GENERIC_VERSION
 from label.atomic import write_atomic
 
+
+RESOURCES = Path(__file__).parent / 'resources'
+DEFAULT_VOCABULARY = RESOURCES / 'skill_spec_v1.yaml'
 
 def read(path):
     return json.loads(Path(path).read_text())
@@ -57,7 +60,16 @@ def reference(schema, contract, episode):
         raise ValueError('human/source episode identity or frame count mismatch')
     rows = [{'start_frame': row['start_frame'], 'end_frame': row['end_frame'],
              'action_id': action_id(row['primary_action'])} for row in selected[0]['subtasks']]
-    validate_segments(rows, {**contract, 'frame_count': episode['length']})
+    if contract['version'] == GENERIC_VERSION:
+        # Validate reference intervals independently of the model's vocabulary.
+        actions = {r['action_id']: canonical for r, canonical in zip(rows,
+                   [s['primary_action'] for s in selected[0]['subtasks']])}
+        body = {'version': 'argus_actions_v1', 'vocabulary_sha256': 'reference',
+                'actions': [{'action_id': key, 'primary_action': value} for key, value in actions.items()]}
+        check = {**body, 'catalog_sha256': digest(body)}
+    else:
+        check = contract
+    validate_segments(rows, {**check, 'frame_count': episode['length']})
     if not rows:
         raise ValueError('empty human annotation')
     return rows
@@ -91,7 +103,9 @@ def audit(dataset, vocabulary):
     return result
 
 
-def prepare(dataset, vocabulary, out, selected=None):
+def prepare(dataset, vocabulary, out, selected=None, mode="generic"):
+    if mode not in ("generic", "closed"):
+        raise ValueError("unknown benchmark mode")
     from label import episode as me, policy
     from prepare.formats import probe, video_views_episode
 
@@ -99,17 +113,23 @@ def prepare(dataset, vocabulary, out, selected=None):
     if out.exists():
         raise ValueError('use a new output directory; existing benchmark artifacts are never overwritten')
     info, episodes = source_episodes(dataset)
-    contract = definitions(dataset, vocabulary)
+    if mode == 'generic':
+        rules = yaml.safe_load(vocabulary.read_text())
+        contract = generic_catalog(rules, rules.get('phases', {}))
+    else:
+        contract = definitions(dataset, vocabulary)
     if selected is not None:
         if not selected or set(selected) - {r['episode_index'] for r in episodes}:
             raise ValueError('empty or unknown episode selection')
         episodes = [r for r in episodes if r['episode_index'] in selected]
-    schema = read(dataset / 'lite_annotations/annotation_schema_v1.json')
-    for row in episodes:
-        reference(schema, contract, row)
+    schema = None
+    if mode == 'closed':
+        schema = read(dataset / 'lite_annotations/annotation_schema_v1.json')
+        for row in episodes:
+            reference(schema, contract, row)
     manifest = {'version': 1, 'dataset_id': digest(str(dataset)), 'dataset_path': str(dataset),
                 'input_modality': 'multi_view_rgb_only', 'catalog': contract,
-                'reference_sha256': digest(schema),
+                'mode': mode, 'reference_sha256': digest(schema) if schema is not None else None,
                 'episodes': []}
     for row in episodes:
         index, count = row['episode_index'], row['length']
