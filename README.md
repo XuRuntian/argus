@@ -73,6 +73,9 @@ It is the only harness that combines native multi-format ingestion ([LeRobot's a
 
 ## Install and review
 
+For optional five-field subtask annotations (action, subject, object and frame boundaries),
+see the [subtask workflow](subtask_annotation/README.md). Evaluation is external.
+
 You need Python 3.11, [uv](https://docs.astral.sh/uv/), and [`ffmpeg`](https://ffmpeg.org/ffmpeg.html)/[`ffprobe`](https://ffmpeg.org/ffprobe.html) 5.1 or newer.
 
 ```console

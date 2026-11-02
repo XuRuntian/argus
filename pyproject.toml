@@ -6,6 +6,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = "==3.11.*"
 dependencies = [
+    "pyyaml>=6.0.2",
     "av==18.1.0",
     "h5py>=3.16.0",
     "huggingface-hub==1.32.0",

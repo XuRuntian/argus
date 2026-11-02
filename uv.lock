@@ -37,6 +37,7 @@ dependencies = [
     { name = "pillow" },
     { name = "protobuf" },
     { name = "pyarrow" },
+    { name = "pyyaml" },
     { name = "scipy" },
 ]
 
@@ -59,6 +60,7 @@ requires-dist = [
     { name = "pillow", specifier = "==12.3.0" },
     { name = "protobuf", specifier = "==7.36.2" },
     { name = "pyarrow", specifier = "==25.0.1" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "scipy", specifier = "==1.17.1" },
 ]
 

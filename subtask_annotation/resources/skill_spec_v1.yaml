@@ -1,0 +1,131 @@
+# Action-only projection of robolabel/config/skill_templates.yaml. See SOURCE.md.
+version: argus_subtasks_v1
+subjects:
+- effector
+- arm
+- left_effector
+- right_effector
+- both_effectors
+- base
+- robot_body
+- left_arm
+- right_arm
+- both_arms
+- unknown
+actions:
+  transfer:
+    meaning: 物体已被稳定控制后移动到另一位置；只有明显空间移动才标注。
+    start: 紧接末端pick之后。
+    end: 末端夹取物品停止移动的第一帧；
+  hand_over:
+    meaning: 将已稳定控制的物体递交给另一个末端、机器人、人或目标接收位置。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 末端完全放开的第一帧；
+  pick:
+    meaning: 接近并抓起物体。
+    start: 末端开始朝目标物体连续移动；
+    end: 末端完全闭合的第一帧；
+  place:
+    meaning: 平稳放下物体，不是扔。
+    start: 末端开始朝目标位置连续移动；
+    end: 末端完全放开的第一帧；
+  press:
+    meaning: 按按钮、开关、可按压部件。
+    start: 末端开始朝目标位置连续移动；
+    end: 末端离开接触物体的第一帧；
+  push:
+    meaning: 推动物体、把手、门、抽屉等。
+    start: 末端开始朝目标位置连续移动；
+    end: 末端离开接触物体的第一帧；
+  pull:
+    meaning: 拉动物体，如抽屉、门、拉链、窗帘。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 末端离开接触物体的第一帧；
+  open:
+    meaning: 打开具有开合状态的对象，如门、抽屉、盒盖、柜门、窗帘。
+    start: 末端开始朝目标位置连续移动；
+    end: 末端离开接触物体的第一帧；
+  close:
+    meaning: 关闭具有开合状态的对象，如门、抽屉、盒盖、柜门、窗帘。
+    start: 末端开始朝目标位置连续移动；
+    end: 末端离开接触物体的第一帧；
+  scoop:
+    meaning: 使用工具舀取、铲取液体、颗粒、粉末或小物体。
+    start: 该动作的有效运动开始的第一帧；若视频开始时已在进行，则从第 0 帧开始。
+    end: 舀取/铲取动作完成并离开源容器或源区域的第一帧。
+  cut:
+    meaning: 使用刀具、剪刀或其他工具切割目标对象。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 末端离开接触物体的第一帧；
+  hold:
+    meaning: 稳定固定目标对象，常用于辅助另一只手执行主动作。
+    start: 末端夹取物品停止移动的第一帧；（根据主观判断当前的动作类型是否发生变化）
+    end: 末端夹取物品开始移动的第一帧；（根据主观判断当前的动作类型是否发生变化）
+  stir:
+    meaning: 使用工具搅拌容器中的液体、粉末、颗粒或混合物。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 末端的工具离开接触物体的第一帧；
+  zip:
+    meaning: 拉上或闭合拉链。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 末端完全张开的第一帧；
+  unzip:
+    meaning: 拉开或打开拉链。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 末端完全张开的第一帧；
+  twist:
+    meaning: 旋转、拧动、转开关、拧盖子。
+    start: 紧接末端pick之后。
+    end: 末端完全张开的第一帧；
+  pour:
+    meaning: 倾倒液体、颗粒、粉末。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 被控制的容器变成比水平面略高几度，容器停止流出物体的第一帧；
+  fold:
+    meaning: 折叠布料、纸张、软物体。
+    start: 末端开始朝目标位置连续移动；
+    end: 末端完全张开的第一帧；
+  slide:
+    meaning: 不拿起，沿表面滑动。
+    start: 末端开始朝目标位置连续移动；
+    end: 末端完全张开的第一帧；
+  insert:
+    meaning: 插入孔、槽、接口、容器开口。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 末端完全张开的第一帧；
+  shake:
+    meaning: 摇晃物体，使内部物质混合、散开或掉落。
+    start: 该动作的有效运动开始的第一帧；若视频开始时已在进行，则从第 0 帧开始。
+    end: 摇晃结束的第一帧
+  strike:
+    meaning: 敲击、打击、盖章、拍打。
+    start: 该动作的有效运动开始的第一帧；若视频开始时已在进行，则从第 0 帧开始。
+    end: 工具/末端与目标发生有效撞击的帧之后工具将要离开的第一帧
+  throw:
+    meaning: 运动中释放、抛出或突然丢下。
+    start: 紧接pick之后，末端开始朝目标位置连续移动；
+    end: 末端完全张开的第一帧；
+  navigate:
+    meaning: 机器人本体/底盘移动，不操作物体。
+    start: 底盘开始移动；
+    end: 底盘结束移动的第一帧；
+  wipe_scrub:
+    meaning: 用工具或末端擦拭、刷洗。
+    start: 该动作的有效运动开始的第一帧；若视频开始时已在进行，则从第 0 帧开始。
+    end: 擦洗结束的第一帧
+  none:
+    meaning: 无任务相关操作。
+    start: 无任务相关动作开始的第一帧。
+    end: 无任务相关操作结束，或视频结束的第一帧
+  return_to_initial_pose:
+    meaning: 任务完成后，单个或多个末端离开操作区域并恢复到初始位姿。
+    start: 紧接上一个skill结束，末端开始返回初始位置；
+    end: 末端回到初始位置，停止移动的第一帧；
+  manipulate:
+    meaning: 其他未覆盖操作。
+    start: 该动作的有效运动开始的第一帧；若视频开始时已在进行，则从第 0 帧开始。
+    end: 人工指定关键状态变化帧
+  custom:
+    meaning: 自定义语义片段技能。
+    start: 该动作的有效运动开始的第一帧；若视频开始时已在进行，则从第 0 帧开始。
+    end: 人工指定自定义片段结束帧

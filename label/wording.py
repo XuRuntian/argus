@@ -512,7 +512,8 @@ def normalize_labels(labels, counts: dict | None = None, log: list | None = None
     counts = {} if counts is None else counts
 
     def keep(parent, k):
-        return k in OWN_KEYS or k in ENUM_KEYS or k in TASK_TEXT_KEYS or (parent, k) in OWN_FIELDS
+        return ((parent == '' and k == 'subtasks') or k in OWN_KEYS or k in ENUM_KEYS or k in TASK_TEXT_KEYS
+                or (parent, k) in OWN_FIELDS)
 
     def walk(v, key):
         if isinstance(v, dict):
