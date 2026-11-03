@@ -23,7 +23,20 @@ uv run python -m subtask_annotation export --job data/subtasks \
 
 区间为 `[start_frame,end_frame)`，按主动作连续覆盖整段视频。独立动作同时发生时只标主动作；共同操作可用 `both_effectors`。动作无法判断用 `action: null`，主体不明用 `unknown`，物品不明或不存在用 `object: null`。物品使用一致的简短英文名称，不要求额外 slots。
 
-动作和主体优先使用规范中的名称；明确识别但没有合适选项时允许自由命名，使用一致的简短英文名（建议 snake_case），不为已有选项另造同义词。左右以主体自身为准。自定义名称原样导出，校验器不判断语义是否正确。
+模型只返回每段的 `start_frame`、`action`、`subject`、`object`；程序用下一段起点生成当前终点，最后终点固定为总帧数。起点必须从 0 开始、严格递增且小于总帧数，不会自动排序或截断。模型仍须显式标出空闲与未知片段，程序不会识别或补出漏标动作。历史五字段回复继续按原规则严格校验，不自动修复旧结果。
+
+默认开放模式下，动作和主体优先使用规范中的名称；明确识别但没有合适选项时允许自由命名，使用一致的简短英文名（建议 snake_case），不为已有选项另造同义词。左右以主体自身为准。自定义名称原样导出，校验器不判断语义是否正确。
+
+准备时可用 `--action-vocabulary open|closed` 选择动作词表模式，默认为 `open`，保持上述可扩展行为。`closed` 只允许 YAML 中的动作名称或 `null`；无匹配定义时用 `null`，词表外名称会导致标注校验失败，不自动映射。该开关不限制主体或物品名称。
+
+使用固定类别人工真值评测时，可单独准备封闭模式任务：
+
+```bash
+uv run python -m subtask_annotation prepare --dataset /path/to/dataset \
+  --out data/subtasks_closed --action-vocabulary closed
+```
+
+后续标注和导出命令使用该任务目录即可。模式写入 manifest、请求 contract 和导出结果的 `action_vocabulary`；切换模式需准备新目录，不能混用已有标注。历史未记录模式的任务按 `open` 解释。
 
 默认使用[精简规范](resources/skill_spec_v1.yaml)，包含 hold、hand_over 和复位，不包含 phase。来源与缺省规则见 [SOURCE.md](resources/SOURCE.md)。可用 `prepare --spec 文件.yaml` 替换；输出记录规范哈希。格式失败、缺失标注或输入变更会阻止导出，不自动修正答案。
 

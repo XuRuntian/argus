@@ -11,7 +11,7 @@ import numpy as np
 import yaml
 
 from label.atomic import write_atomic
-from label.subtasks import bind, digest, validate, validate_spec
+from label.subtasks import get_action_vocabulary, bind, digest, validate, validate_spec
 
 DEFAULT_SPEC = Path(__file__).parent / 'resources' / 'skill_spec_v1.yaml'
 
@@ -47,13 +47,15 @@ def rgb_files(dataset, info, index):
     return files
 
 
-def prepare(dataset, out, spec_path=DEFAULT_SPEC, selected=None):
+def prepare(dataset, out, spec_path=DEFAULT_SPEC, selected=None, *, action_vocabulary='open'):
     from label import episode as me, policy
     from prepare.formats import probe, video_views_episode
 
     dataset, out = Path(dataset).resolve(), Path(out).resolve()
     spec = yaml.safe_load(Path(spec_path).read_text())
     validate_spec(spec)
+    # Validate the mode before creating any output directory.
+    get_action_vocabulary({'action_vocabulary': action_vocabulary})
     info = read(dataset / 'meta/info.json')
     fps = info['fps']
     if type(fps) not in (int, float) or not math.isfinite(fps) or fps <= 0:
@@ -71,7 +73,8 @@ def prepare(dataset, out, spec_path=DEFAULT_SPEC, selected=None):
             raise ValueError('empty or unknown episode selection')
         episodes = [e for e in episodes if e['episode_index'] in selected]
     manifest = {'version': 1, 'dataset_id': digest(str(dataset)), 'input_modality': 'multi_view_rgb_only',
-                'spec': spec, 'spec_sha256': digest(spec), 'episodes': []}
+                'spec': spec, 'spec_sha256': digest(spec), 'action_vocabulary': action_vocabulary,
+                'episodes': []}
     # Exclusive ownership: never reuse or remove an existing job, even after a failure.
     out.mkdir(parents=True, exist_ok=False)
     try:
@@ -85,7 +88,7 @@ def prepare(dataset, out, spec_path=DEFAULT_SPEC, selected=None):
                     raise ValueError(f'episode {index}: requires synchronized CFR videos starting at zero')
             ep = out / 'episodes' / f'episode_{index:06d}'
             video_views_episode(ep, files, 'teleop_arms', 'subtask_annotation',
-                                {'subtask_contract': bind(spec, count, fps)},
+                                {'subtask_contract': bind(spec, count, fps, action_vocabulary=action_vocabulary)},
                                 prs=facts, shared_clock=True, nominal_fps=fps)
             ctx = read(ep / 'context.json')
             ctx['annotation_policy'] = policy.resolve(ctx, inspection='off', field_dictionary=False)
@@ -107,6 +110,7 @@ def export(job, labels):
     manifest = read(job / 'manifest.json')
     if manifest.get('version') != 1 or digest(manifest['spec']) != manifest['spec_sha256']:
         raise ValueError('invalid manifest version or specification digest')
+    mode = get_action_vocabulary(manifest)
     episodes, seen = [], set()
     for ep in manifest['episodes']:
         index = ep['episode_id']
@@ -117,8 +121,10 @@ def export(job, labels):
         record = read(path)
         if record.get('dry_run') or not annotation_complete(record):
             raise ValueError(f'{path}: missing or incomplete annotation; raw reply is retained')
-        contract = bind(manifest['spec'], ep['frame_count'], ep['fps'])
-        if record.get('subtask_contract') != contract:
+        contract = bind(manifest['spec'], ep['frame_count'], ep['fps'], action_vocabulary=mode)
+        saved_contract = record.get('subtask_contract')
+        if (not isinstance(saved_contract, dict)
+                or {'action_vocabulary': 'open', **saved_contract} != contract):
             raise ValueError(f'{path}: request contract differs from manifest')
         identity = record.get('input_identity')
         if not isinstance(identity, dict) or not identity.get('source_proof'):
@@ -136,7 +142,7 @@ def export(job, labels):
         raise ValueError('manifest has no episodes')
     return {'version': 1, 'spec_version': manifest['spec']['version'], 'spec_sha256': manifest['spec_sha256'],
             'dataset_id': manifest['dataset_id'], 'interval_convention': '[start_frame, end_frame)',
-            'input_modality': manifest['input_modality'], 'episodes': episodes}
+            'input_modality': manifest['input_modality'], 'action_vocabulary': mode, 'episodes': episodes}
 
 
 def main(argv=None):
@@ -147,6 +153,8 @@ def main(argv=None):
     prep.add_argument('--out', type=Path, required=True)
     prep.add_argument('--spec', type=Path, default=DEFAULT_SPEC)
     prep.add_argument('--episodes', type=int, nargs='+')
+    prep.add_argument('--action-vocabulary', choices=('open', 'closed'), default='open',
+                      help='open allows new action names; closed restricts actions to the spec (null is allowed)')
     output = sub.add_parser('export')
     output.add_argument('--job', type=Path, required=True)
     output.add_argument('--labels', type=Path, required=True)
@@ -154,7 +162,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == 'prepare':
-            result = prepare(args.dataset, args.out, args.spec, args.episodes)
+            result = prepare(args.dataset, args.out, args.spec, args.episodes,
+                             action_vocabulary=args.action_vocabulary)
             print(f'Prepared {len(result["episodes"])} RGB episodes: {args.out}')
         else:
             write_atomic(args.out, export(args.job, args.labels))

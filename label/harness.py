@@ -1246,9 +1246,9 @@ def read_reply(text: str, request: dict) -> tuple[dict, bool]:
     the request fields it is built from."""
     labels, ok = parse_response(text)
     if ok and 'subtask_contract' in request:
-        from label.subtasks import validate
+        from label.subtasks import materialize
         try:
-            validate(labels.get('subtasks'), request['subtask_contract'])
+            labels['subtasks'] = materialize(labels.get('subtasks'), request['subtask_contract'])
         except (ValueError, KeyError, TypeError) as error:
             labels['_incomplete'] = [f'subtask contract: {error}']
             return labels, False

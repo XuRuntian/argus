@@ -27,10 +27,51 @@ def reply(rows):
                        'subtasks': rows})
 
 
+def change_point(**changes):
+    return {k: v for k, v in segment(**changes).items() if k != 'end_frame'}
+
+
+def test_change_points_materialize_without_mutation_and_reparse(contract):
+    rows = [change_point(), change_point(start_frame=8),
+            change_point(start_frame=12, action=None, subject='unknown', object=None),
+            change_point(start_frame=17, action='none', subject='unknown', object=None)]
+    original = copy.deepcopy(rows)
+    request = {'subtask_contract': contract, 'annotation_policy': {'rig': 'teleop_arms'}}
+    labels, ok = harness.read_reply(reply(rows), request)
+    assert ok
+    assert rows == original
+    assert labels['subtasks'] == [{**row, 'end_frame': end}
+                                  for row, end in zip(rows, [8, 12, 17, 20])]
+    checked, ok = harness.read_reply(json.dumps(labels), request)
+    assert ok and checked == labels
+    assert subtasks.materialize([change_point()], contract) == [segment()]
+
+
+@pytest.mark.parametrize('rows', [
+    [change_point(start_frame=1)], [change_point(start_frame=-1)],
+    [change_point(start_frame=True)], [change_point(start_frame=0.0)],
+    [change_point(start_frame='0')],
+    [change_point(), change_point(start_frame=20)],
+    [change_point(), change_point(start_frame=21)],
+    [change_point(), change_point()],
+    [change_point(), change_point(start_frame=10), change_point(start_frame=5)],
+    [change_point(), segment(start_frame=10)],
+    [change_point(action='none')], [change_point(subject=None)],
+    [change_point(extra='unexpected')],
+])
+def test_bad_change_points_remain_unchanged_and_incomplete(contract, rows):
+    labels, ok = harness.read_reply(reply(rows), {'subtask_contract': contract})
+    assert not ok
+    assert labels['subtasks'] == rows
+    assert 'subtask contract:' in labels['_incomplete'][0]
+
+
 def test_prompt_contains_action_boundaries_but_no_internal_contract(contract):
     text = subtasks.prompt(contract)
     assert {'hold', 'hand_over', 'return_to_initial_pose'} <= set(contract['spec']['actions'])
     assert 'Start:' in text and 'End:' in text
+    assert 'Do not output end_frame' in text
+    assert 'four fields' in text
     for forbidden in ('allowed_phases', 'phases', 'vocabulary_sha256', 'spec_sha256', 'required_arguments'):
         assert forbidden not in text
     assert contract['spec_sha256'] not in text
@@ -82,6 +123,39 @@ def test_custom_action_and_subject_are_preserved_without_changing_vocabulary(con
     assert 'For a freely named action' in text
 
 
+def test_closed_vocabulary_rejects_new_actions_but_allows_subjects_and_unknown(contract):
+    closed = {**contract, 'action_vocabulary': 'closed'}
+    request = {'subtask_contract': closed, 'annotation_policy': {'rig': 'teleop_arms'}}
+    for action in ('hold', None, 'none'):
+        row = change_point(action=action, subject='human_hand', object=None)
+        labels, ok = harness.read_reply(reply([row]), request)
+        assert ok, labels
+        assert labels['subtasks'] == [{**row, 'end_frame': 20}]
+    for row in (change_point(action='peel'), segment(action='peel')):
+        labels, ok = harness.read_reply(reply([row]), request)
+        assert not ok
+        assert labels['subtasks'] == [row]
+        assert 'closed action vocabulary' in labels['_incomplete'][0]
+    text = subtasks.prompt(closed)
+    assert 'Action vocabulary is closed' in text
+    assert 'Subject names remain extensible' in text
+    assert 'For a freely named action' not in text
+    assert 'not exhaustive restrictions' not in text
+
+
+def test_legacy_contract_defaults_to_open(contract):
+    legacy = {k: v for k, v in contract.items() if k != 'action_vocabulary'}
+    assert subtasks.get_action_vocabulary(legacy) == 'open'
+    assert subtasks.prompt(legacy) == subtasks.prompt(contract)
+    assert subtasks.materialize([change_point(action='peel')], legacy) == [segment(action='peel')]
+
+
+@pytest.mark.parametrize('mode', [None, '', 'invalid', [], True])
+def test_invalid_vocabulary_mode_is_rejected(contract, mode):
+    with pytest.raises(ValueError, match='action_vocabulary'):
+        subtasks.validate_contract({**contract, 'action_vocabulary': mode})
+
+
 def test_publication_does_not_rewrite_object_names():
     from label.wording import normalize_labels
     rows = [segment(object='the supplied window')]
@@ -120,7 +194,8 @@ def source(tmp_path, *, channel_first=False):
 
 
 @pytest.mark.parametrize('row', [segment(), segment(action='peel', subject='human_hand', object='banana')])
-def test_prepare_dry_run_mock_reply_export_and_identity(tmp_path, row):
+@pytest.mark.parametrize('starts_only', [False, True])
+def test_prepare_dry_run_mock_reply_export_and_identity(tmp_path, row, starts_only):
     data = source(tmp_path, channel_first=True)
     job = tmp_path / 'job'
     manifest = prepare(data, job)
@@ -140,7 +215,8 @@ def test_prepare_dry_run_mock_reply_export_and_identity(tmp_path, row):
         harness.label_episode(ep, receipt, **options, dataset_note='SECRET_TASK_ORDER')
     # Simulate a received response; no provider is contacted by this test.
     record.pop('dry_run', None)
-    record['labels'], record['parse_ok'] = harness.read_reply(reply([row]), record)
+    received = {k: v for k, v in row.items() if k != 'end_frame'} if starts_only else row
+    record['labels'], record['parse_ok'] = harness.read_reply(reply([received]), record)
     assert record['parse_ok'], record['labels']
     write_atomic(receipt, record)
     output = export(job, receipt.parent)
@@ -167,6 +243,43 @@ def test_depth_is_not_rgb_and_failed_prepare_leaves_no_job(tmp_path):
     with pytest.raises(ValueError, match='no RGB'):
         prepare(data, job)
     assert not job.exists()
+
+
+@pytest.mark.parametrize('mode', ['open', 'closed', 'legacy'])
+def test_vocabulary_mode_roundtrip_export_and_mismatch(tmp_path, mode):
+    from subtask_annotation.__main__ import main
+    data = source(tmp_path)
+    job = tmp_path / 'job'
+    selected_mode = 'open' if mode == 'legacy' else mode
+    main(['prepare', '--dataset', str(data), '--out', str(job),
+          '--action-vocabulary', selected_mode])
+    manifest = read(job / 'manifest.json')
+    ep = job / 'episodes/episode_000000'
+    ctx = read(ep / 'context.json')
+    assert ctx['subtask_contract']['action_vocabulary'] == selected_mode
+    assert manifest['action_vocabulary'] == selected_mode
+    if mode == 'legacy':
+        # Historical jobs and receipts omit the mode entirely.
+        del manifest['action_vocabulary']
+        del ctx['subtask_contract']['action_vocabulary']
+        write_atomic(job / 'manifest.json', manifest)
+        write_atomic(ep / 'context.json', ctx)
+    receipt = job / 'labels/episode_000000.json'
+    record = harness.label_episode(ep, receipt, model='openai/gpt-6-astra', reasoning='medium',
+        api_key='dry-run', max_tokens=64000, timeout=6060, cell_w=448, dry_run=True)
+    record.pop('dry_run')
+    action = 'hold' if mode == 'closed' else 'peel'
+    record['labels'], record['parse_ok'] = harness.read_reply(reply([change_point(action=action)]), record)
+    assert record['parse_ok']
+    write_atomic(receipt, record)
+    output = export(job, receipt.parent)
+    assert output['action_vocabulary'] == selected_mode
+    assert output['episodes'][0]['subtasks'] == [segment(action=action)]
+    # Altering only the manifest must not relabel a saved run as another mode.
+    manifest['action_vocabulary'] = 'open' if selected_mode == 'closed' else 'closed'
+    write_atomic(job / 'manifest.json', manifest)
+    with pytest.raises(ValueError, match='contract differs'):
+        export(job, receipt.parent)
 
 
 def test_non_cfr_and_unknown_selection_fail_without_artifacts(tmp_path):
